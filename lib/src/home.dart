@@ -1,14 +1,20 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui';
+import 'package:image/image.dart' as img;
 
+import 'dart:ui';
+import 'package:fakehub_detetctor/src/detector.dart';
+import 'package:tflite_flutter/tflite_flutter.dart' as tfl;
 import 'package:dotted_border/dotted_border.dart';
+import 'package:fakehub_detetctor/src/models_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_ml_kit/google_ml_kit.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:ui' as ui;
+import 'package:image/image.dart' as imageLib;
 
 class HomeDashboard extends StatefulWidget {
   const HomeDashboard({super.key});
@@ -20,10 +26,21 @@ class HomeDashboard extends StatefulWidget {
 class _HomeDashboardState extends State<HomeDashboard> {
   XFile? iimageFile;
   List<Face>? facess =[];
+  var data;
   ui.Image? iimage;
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: Colors.black,
+        onPressed: (){
+          Get.to(ModelScreen());
+        },
+        child: Icon(
+          color: Colors.white,
+          Icons.arrow_forward_ios
+        ),
+      ),
       appBar: AppBar(
         title: Text('DeepFake Detector'),
         centerTitle: true,
@@ -91,22 +108,25 @@ class _HomeDashboardState extends State<HomeDashboard> {
           SizedBox(
             height: 50,
           ),
-          facess!.length> 0 ? Container(
-            width: MediaQuery.of(context).size.width,
-            // child: GridView.builder(
-            //   itemCount: facess!.length,
-            //   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            //       crossAxisCount: 4, crossAxisSpacing: 14.0, mainAxisSpacing: 14.0),
-            //   itemBuilder: (BuildContext context, int index) {
-            //     return Container(
-            //       height: 100,
-            //       width: 100,
-            //       child:
-            //     );
-            //   },
-            // ),
-            child: CustomPaint(
-              painter: FacePainter(iimage!, facess!),
+          facess!.length> 0 ? Expanded(
+            child: Container(
+              width: MediaQuery.of(context).size.width,
+              child: GridView.builder(
+                itemCount: facess!.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4, crossAxisSpacing: 14.0, mainAxisSpacing: 14.0),
+                itemBuilder: (BuildContext context, int index) {
+                  return Container(
+                    height: 100,
+                    width: 100,
+                    child: FaceCropperWidget(
+                      imagePath: iimageFile!.path,
+                      faceRect: facess![index].boundingBox,
+                    ),
+                  );
+                },
+              ),
+
             ),
           ) : SizedBox()
         ],
@@ -116,7 +136,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
 
   Future<void> uploadImage() async {
     var image = (await ImagePicker().pickImage(source: ImageSource.gallery));
-    final data = await File(image!.path).readAsBytes();
+     data = await File(image!.path).readAsBytes();
     await decodeImageFromList(data).then((value) => setState(() {
       iimage = value;
     }));
@@ -135,103 +155,71 @@ class _HomeDashboardState extends State<HomeDashboard> {
 
     });
     print(faces);
+    final interpreter = await tfl.Interpreter.fromAsset('assets/BaseB0.tflite');
 
-    final List<ui.Image> croppedFaces = [];
-    for (Face face in faces) {
-      // Get face bounding box
-      final Rect boundingBox = face.boundingBox;
+    var inputImage = img.decodeImage(data);
 
-      // Extract facial region from original image
-      final croppedImage = await _cropImage(image, boundingBox);
-
-      // Convert InputImage to ui.Image for display
-      final ui.Image convertedImage = await croppedImage.toUiImage();
-      croppedFaces.add(convertedImage);
-    }
-
-    // Update state to display cropped faces (assuming you have a way to manage state)
-    setState(() {
-      // Replace with your logic to display croppedFaces in Image.file widget(s)
-    });
+    var output = List.filled(1, [0.0, 0.0]); // Placeholder, replace with actual output structure
+    interpreter.run(inputImage!.buffer.asUint8List(), output);
+    print(output);
   }
 
-  Future<InputImage> _cropImage(InputImage originalImage, Rect boundingBox) async {
-    // Option 1: Using a File object (if applicable)
-    if (originalImage.path != null) {
-      final file = File(originalImage.path!);
-      final imageBytes = await file.readAsBytes();
-      return await _cropImageFromBytes(imageBytes, boundingBox);
-    }
 
-    // Option 2: Assuming alternative method to get image data (replace with your logic)
-    // Replace with a function that provides the raw image data based on your image processing library
-    // This could involve converting the image to a format like JPEG or PNG and then reading its bytes.
-    // final imageBytes = ... (your logic to get image bytes);
-    // return await _cropImageFromBytes(imageBytes, boundingBox);
-
-    // Throw an exception if neither option is suitable
-    throw Exception("Unsupported InputImage format for cropping");
-  }
-
-  Future<InputImage> _cropImageFromBytes(List<int> imageBytes, Rect boundingBox) async {
-    final originalImageDecoder = await instantiateImageCodec(imageBytes);
-    final originalImageFrame = await originalImageDecoder.getNextFrame();
-
-    // Convert bounding box to crop rectangle (adjust if needed)
-    final int cropX = boundingBox.left.toInt();
-    final int cropY = boundingBox.top.toInt();
-    final int cropWidth = boundingBox.width.toInt();
-    final int cropHeight = boundingBox.height.toInt();
-
-    // Check for valid crop area within image bounds
-    if (cropX < 0 || cropY < 0 || cropX + cropWidth > originalImageFrame.image.width || cropY + cropHeight > originalImageFrame.image.height) {
-      throw Exception("Cropping area exceeds image bounds");
-    }
-
-    // Perform image crop
-    final image = originalImageFrame.image.copy(
-        pixelRatio: originalImageFrame.image.pixelRatio,
-        width: cropWidth,
-        height: cropHeight,
-        x: cropX,
-        y: cropY);
-
-    // Convert cropped image to InputImage
-    final croppedImage = InputImage!.fromBytes(await image.toByteData(),
-        width: cropWidth, height: cropHeight);
-    return croppedImage;
-  }
 
 
 }
 
+class FaceImagePainter extends CustomPainter {
+  ui.Image resImage;
 
-class FacePainter extends CustomPainter {
-  final ui.Image image;
-  final List<Face> faces;
-  final List<Rect> rects = [];
+  Rect rectCrop;
 
-  FacePainter(this.image, this.faces) {
-    for (var i = 0; i < faces.length; i++) {
-      rects.add(faces[i].boundingBox);
-    }
+  FaceImagePainter(this.resImage, this.rectCrop);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Rect rect = Offset.zero & size;
+    final Size imageSize =
+    Size(resImage.width.toDouble(), resImage.height.toDouble());
+    FittedSizes sizes = applyBoxFit(BoxFit.cover, imageSize, size);
+
+    Rect inputSubRect = rectCrop;
+    final Rect outputSubRect =
+    Alignment.center.inscribe(sizes.destination, rect);
+
+    final paint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill
+      ..strokeWidth = 4;
+    canvas.drawRect(rect, paint);
+
+    canvas.drawImageRect(resImage, inputSubRect, outputSubRect, Paint());
   }
 
   @override
-  void paint(ui.Canvas canvas, ui.Size size) {
-    final Paint paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
-      ..color = Colors.red;
-
-    canvas.drawImage(image, Offset.zero, Paint());
-    for (var i = 0; i < faces.length; i++) {
-      canvas.drawRect(rects[i], paint);
-    }
+  bool shouldRepaint(CustomPainter oldDelegate) {
+    return false;
   }
+}
 
-  @override
-  bool shouldRepaint(FacePainter old) {
-    return image != old.image  || faces != old.faces;
+class ImageUtils {
+  static Future<ui.Image> getUiImage({
+    String? imageUrl,
+    String? imagePath,
+  }) async {
+    Completer<ImageInfo> completer = Completer();
+    ImageProvider? img;
+    if (imageUrl != null) {
+      img = NetworkImage(imageUrl);
+    } else if (imagePath != null) {
+      img = FileImage(File(imagePath));
+    }
+    img
+        ?.resolve(const ImageConfiguration())
+        .addListener(ImageStreamListener((ImageInfo info, bool _) {
+      completer.complete(info);
+    }));
+    ImageInfo imageInfo = await completer.future;
+    return imageInfo.image;
   }
 }
