@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:fakehub_detetctor/src/utils.dart';
+import 'package:flutter/widgets.dart';
 import 'package:image/image.dart' as img;
 
 import 'dart:ui';
 import 'package:fakehub_detetctor/src/detector.dart';
-import 'package:tflite_flutter/tflite_flutter.dart' as tfl;
+import 'package:path_provider/path_provider.dart';
+import 'package:tflite/tflite.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:fakehub_detetctor/src/models_screen.dart';
 import 'package:flutter/material.dart';
@@ -28,19 +31,55 @@ class _HomeDashboardState extends State<HomeDashboard> {
   List<Face>? facess =[];
   var data;
   ui.Image? iimage;
+  List<dynamic> finalCroppedImage= [];
+
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: Colors.black,
-        onPressed: (){
-          Get.to(ModelScreen());
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      floatingActionButton: InkWell(
+        onTap: (){
+          if(facess!.length>0){
+            Get.to(ModelScreen(
+              images: finalCroppedImage,
+              iimageFile: iimageFile,facess: facess,
+            ));
+          }else{
+            ShowToastMobileApp('No Faces Detected');
+          }
         },
-        child: Icon(
-          color: Colors.white,
-          Icons.arrow_forward_ios
+        child: Container(
+          decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(width: 3, color: Colors.black)),
+          height: 60,
+          width: MediaQuery.of(context).size.width,
+          child: Row(
+            mainAxisSize: MainAxisSize.max,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+
+              Text(
+                'Continue',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
+              ),
+              SizedBox(
+                width: 10,
+              ),
+              Icon(
+                Icons.arrow_forward,
+                color: Colors.black,
+              ),
+
+            ],
+          ),
         ),
-      ),
+      ).marginOnly(left: 25,right: 25,bottom: 20),
       appBar: AppBar(
         title: Text('DeepFake Detector'),
         centerTitle: true,
@@ -65,7 +104,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     ? Center(
                         child: Text('No Image Selected'),
                       )
-                    : Image.file(File(iimageFile!.path)),
+                    : Center(child: Image.file(File(iimageFile!.path))),
               ),
             ),
           ),
@@ -74,7 +113,11 @@ class _HomeDashboardState extends State<HomeDashboard> {
           ),
           InkWell(
             onTap: () {
-              detectImage();
+             if(iimageFile!=null){
+               detectImage();
+             }else{
+               ShowToastMobileApp('No Image Selected');
+             }
             },
             child: Container(
               decoration: BoxDecoration(
@@ -146,22 +189,42 @@ class _HomeDashboardState extends State<HomeDashboard> {
   }
 
   void detectImage() async {
+    facess = [];
+    finalCroppedImage = [];
     final image = InputImage.fromFilePath(iimageFile!.path);
     final faceDetector = GoogleMlKit.vision.faceDetector(FaceDetectorOptions(
-        performanceMode: FaceDetectorMode.fast, enableLandmarks: true));
+        performanceMode: FaceDetectorMode.accurate, enableLandmarks: true));
     List<Face> faces = await faceDetector.processImage(image);
     facess = faces;
     setState(() {
 
     });
-    print(faces);
-    final interpreter = await tfl.Interpreter.fromAsset('assets/BaseB0.tflite');
+    for (int i = 0; i < facess!.length; i++) {
+      img.Image cropOne = img.copyCrop(
+        img.decodeImage(data!)!,
+       x: facess![i].boundingBox.left.toInt(),
+       y:  facess![i].boundingBox.top.toInt(),
+       height:  facess![i].boundingBox.width.toInt(),
+      width:   facess![i].boundingBox.height.toInt(),
+      );
+    //  finalCroppedImage.add(Image.memory(img.encodePng(cropOne)));
+      // Save the image to the local directory
+      final directory = await getApplicationDocumentsDirectory();
+      String imagePath = '${directory.path}/image$i.png';
+      await File(imagePath).writeAsBytes(img.encodePng(cropOne));
+      print(imagePath);
+      finalCroppedImage.add(imagePath);
+    }
 
-    var inputImage = img.decodeImage(data);
+    // final interpreter = await tfl.Interpreter.fromAsset('assets/BaseB0.tflite');
+    //
 
-    var output = List.filled(1, [0.0, 0.0]); // Placeholder, replace with actual output structure
-    interpreter.run(inputImage!.buffer.asUint8List(), output);
-    print(output);
+    //
+    // var output = List.filled(1, [0.0, 0.0]); // Placeholder, replace with actual output structure
+    // interpreter.run(inputImage!.buffer.asUint8List(), output);
+    // print(output);
+
+
   }
 
 

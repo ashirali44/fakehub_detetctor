@@ -42,7 +42,9 @@ dependencies:
   dotted_border: ^2.1.0
   google_fonts: ^6.2.1
   image: ^4.1.7
-  tflite_flutter: ^0.10.4
+  tflite: ^1.1.2
+  path_provider: ^2.1.2
+  fluttertoast: ^8.2.4
 
 dev_dependencies:
   flutter_test:
